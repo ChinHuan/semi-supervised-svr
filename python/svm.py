@@ -18,7 +18,7 @@ if sys.version_info[0] < 3:
 
 __all__ = ['libsvm', 'svm_problem', 'svm_parameter',
            'toPyModel', 'gen_svm_nodearray', 'print_null', 'svm_node', 'C_SVC',
-           'EPSILON_SVR', 'LINEAR', 'NU_SVC', 'NU_SVR', 'ONE_CLASS',
+           'EPSILON_SVR', 'LINEAR', 'NU_SVC', 'NU_SVR', 'LAPESVR', 'ONE_CLASS',
            'POLY', 'PRECOMPUTED', 'PRINT_STRING_FUN', 'RBF',
            'SIGMOID', 'c_double', 'svm_model']
 
@@ -42,6 +42,7 @@ NU_SVC = 1
 ONE_CLASS = 2
 EPSILON_SVR = 3
 NU_SVR = 4
+LAPESVR = 5
 
 LINEAR = 0
 POLY = 1
@@ -225,10 +226,11 @@ class svm_problem(Structure):
 class svm_parameter(Structure):
 	_names = ["svm_type", "kernel_type", "degree", "gamma", "coef0",
 			"cache_size", "eps", "C", "nr_weight", "weight_label", "weight",
-			"nu", "p", "shrinking", "probability"]
+			"nu", "p", "shrinking", "probability", "lap_gamma", "n_neighbors", "nu_eigen",
+			"lmbda", "mu", "lap_p"]
 	_types = [c_int, c_int, c_int, c_double, c_double,
 			c_double, c_double, c_double, c_int, POINTER(c_int), POINTER(c_double),
-			c_double, c_double, c_int, c_int]
+			c_double, c_double, c_int, c_int, c_double, c_int, c_int, c_double, c_double, c_double]
 	_fields_ = genFields(_names, _types)
 
 	def __init__(self, options = None):
@@ -247,7 +249,7 @@ class svm_parameter(Structure):
 		return s
 
 	def set_to_default_values(self):
-		self.svm_type = C_SVC;
+		self.svm_type = C_SVC
 		self.kernel_type = RBF
 		self.degree = 3
 		self.gamma = 0
@@ -265,6 +267,12 @@ class svm_parameter(Structure):
 		self.cross_validation = False
 		self.nr_fold = 0
 		self.print_func = cast(None, PRINT_STRING_FUN)
+		self.lap_gamma = 0.5
+		self.n_neighbors = 30
+		self.nu_eigen = 50
+		self.lmbda = 1000
+		self.mu = 1000
+		self.lap_p = 1
 
 	def parse_options(self, options):
 		if isinstance(options, list):

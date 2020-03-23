@@ -120,7 +120,7 @@ def svm_train(arg1, arg2=None, arg3=None):
 		target = (c_double * l)()
 		libsvm.svm_cross_validation(prob, param, nr_fold, target)
 		ACC, MSE, SCC = evaluations(prob.y[:l], target[:l])
-		if param.svm_type in [EPSILON_SVR, NU_SVR]:
+		if param.svm_type in [EPSILON_SVR, NU_SVR, LAPESVR]:
 			print("Cross Validation Mean squared error = %g" % MSE)
 			print("Cross Validation Squared correlation coefficient = %g" % SCC)
 			return MSE
@@ -208,7 +208,7 @@ def svm_predict(y, x, m, options=""):
 		if not is_prob_model:
 			raise ValueError("Model does not support probabiliy estimates")
 
-		if svm_type in [NU_SVR, EPSILON_SVR]:
+		if svm_type in [NU_SVR, EPSILON_SVR, LAPESVR]:
 			info("Prob. model for test data: target value = predicted value + z,\n"
 			"z: Laplace distribution e^(-|z|/sigma)/(2sigma),sigma=%g" % m.get_svr_probability());
 			nr_class = 0
@@ -227,7 +227,7 @@ def svm_predict(y, x, m, options=""):
 	else:
 		if is_prob_model:
 			info("Model supports probability estimates, but disabled in predicton.")
-		if svm_type in (ONE_CLASS, EPSILON_SVR, NU_SVC):
+		if svm_type in (ONE_CLASS, EPSILON_SVR, NU_SVC, LAPESVR):
 			nr_classifier = 1
 		else:
 			nr_classifier = nr_class*(nr_class-1)//2
@@ -250,7 +250,7 @@ def svm_predict(y, x, m, options=""):
 		y = [0] * nr_instance
 	ACC, MSE, SCC = evaluations(y, pred_labels)
 
-	if svm_type in [EPSILON_SVR, NU_SVR]:
+	if svm_type in [EPSILON_SVR, NU_SVR, LAPESVR]:
 		info("Mean squared error = %g (regression)" % MSE)
 		info("Squared correlation coefficient = %g (regression)" % SCC)
 	else:
