@@ -4,3 +4,5 @@
 *.dll
 *.exp
 *.lib
+__pycache__
+.ipynb_checkpoints
