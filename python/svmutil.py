@@ -250,10 +250,10 @@ def svm_predict(y, x, m, options=""):
 		y = [0] * nr_instance
 	ACC, MSE, SCC = evaluations(y, pred_labels)
 
-	if svm_type in [EPSILON_SVR, NU_SVR, LAPESVR]:
-		info("Mean squared error = %g (regression)" % MSE)
-		info("Squared correlation coefficient = %g (regression)" % SCC)
-	else:
-		info("Accuracy = %g%% (%d/%d) (classification)" % (ACC, int(round(nr_instance*ACC/100)), nr_instance))
+	# if svm_type in [EPSILON_SVR, NU_SVR, LAPESVR]:
+	# 	info("Mean squared error = %g (regression)" % MSE)
+	# 	info("Squared correlation coefficient = %g (regression)" % SCC)
+	# else:
+	# 	info("Accuracy = %g%% (%d/%d) (classification)" % (ACC, int(round(nr_instance*ACC/100)), nr_instance))
 
 	return pred_labels, (ACC, MSE, SCC), pred_values
