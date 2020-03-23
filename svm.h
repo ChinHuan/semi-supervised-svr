@@ -22,7 +22,7 @@ struct svm_problem
 	struct svm_node **x;
 };
 
-enum { C_SVC, NU_SVC, ONE_CLASS, EPSILON_SVR, NU_SVR };	/* svm_type */
+enum { C_SVC, NU_SVC, ONE_CLASS, EPSILON_SVR, NU_SVR, LAPESVR };	/* svm_type */
 enum { LINEAR, POLY, RBF, SIGMOID, PRECOMPUTED }; /* kernel_type */
 
 struct svm_parameter
@@ -44,6 +44,13 @@ struct svm_parameter
 	double p;	/* for EPSILON_SVR */
 	int shrinking;	/* use the shrinking heuristics */
 	int probability; /* do probability estimates */
+
+	double lap_gamma; /* for LAPESVR */
+    int n_neighbors; /* for LAPESVR */
+    int nu_eigen; /* for LAPESVR */
+    double lmbda; /* for LAPESVR */
+    double mu; /* for LAPESVR */
+    double lap_p; /* for LAPESVR */
 };
 
 //
