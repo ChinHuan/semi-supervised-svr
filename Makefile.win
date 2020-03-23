@@ -7,6 +7,8 @@
 CXX = cl.exe
 CFLAGS = /nologo /O2 /EHsc /I. /D _WIN64 /D _CRT_SECURE_NO_DEPRECATE
 TARGET = windows
+LOCAL_INCLUDE = .\include
+DLIB = $(LOCAL_INCLUDE)\dlib\all\source.cpp
 
 all: $(TARGET)\svm-train.exe $(TARGET)\svm-predict.exe $(TARGET)\svm-scale.exe $(TARGET)\svm-toy.exe lib
 
@@ -26,7 +28,7 @@ svm.obj: svm.cpp svm.h
 	$(CXX) $(CFLAGS) -c svm.cpp
 
 lib: svm.cpp svm.h svm.def
-	$(CXX) $(CFLAGS) -LD svm.cpp -Fe$(TARGET)\libsvm -link -DEF:svm.def
+	$(CXX) $(CFLAGS) -LD svm.cpp laplacian.cpp $(DLIB) -I $(LOCAL_INCLUDE) -Fe$(TARGET)\libsvm -link -DEF:svm.def
 
 clean:
 	-erase /Q *.obj $(TARGET)\*.exe $(TARGET)\*.dll $(TARGET)\*.exp $(TARGET)\*.lib

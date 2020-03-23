@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <locale.h>
 #include "svm.h"
+#include "laplacian.h"
 int libsvm_version = LIBSVM_VERSION;
 typedef float Qfloat;
 typedef signed char schar;
@@ -1434,6 +1435,83 @@ private:
 	double *QD;
 };
 
+class LAPESVR_Q: public Kernel
+{
+public:
+	LAPESVR_Q(const svm_problem& prob, const svm_parameter& param, double **_lap)
+	:Kernel(prob.l, prob.x, param)
+	{
+		lap = _lap;
+		l = prob.l;
+		cache = new Cache(l,(long int)(param.cache_size*(1<<20)));
+		QD = new double[2*l];
+		sign = new schar[2*l];
+		index = new int[2*l];
+		for(int k=0;k<l;k++)
+		{
+			sign[k] = 1;
+			sign[k+l] = -1;
+			index[k] = k;
+			index[k+l] = k;
+			QD[k] = (this->*kernel_function)(k,k) + lap[k][k];
+			QD[k+l] = QD[k];
+		}
+		buffer[0] = new Qfloat[2*l];
+		buffer[1] = new Qfloat[2*l];
+		next_buffer = 0;
+	}
+
+	void swap_index(int i, int j) const
+	{
+		swap(sign[i],sign[j]);
+		swap(index[i],index[j]);
+		swap(QD[i],QD[j]);
+	}
+
+	Qfloat *get_Q(int i, int len) const
+	{
+		Qfloat *data;
+		int j, real_i = index[i];
+		if(cache->get_data(real_i,&data,l) < l)
+		{
+			for(j=0;j<l;j++)
+				data[j] = (Qfloat)(this->*kernel_function)(real_i,j) + lap[real_i][j];
+		}
+
+		// reorder and copy
+		Qfloat *buf = buffer[next_buffer];
+		next_buffer = 1 - next_buffer;
+		schar si = sign[i];
+		for(j=0;j<len;j++)
+			buf[j] = (Qfloat) si * (Qfloat) sign[j] * data[index[j]];
+		return buf;
+	}
+
+	double *get_QD() const
+	{
+		return QD;
+	}
+
+	~LAPESVR_Q()
+	{
+		delete cache;
+		delete[] sign;
+		delete[] index;
+		delete[] buffer[0];
+		delete[] buffer[1];
+		delete[] QD;
+	}
+private:
+	int l;
+	Cache *cache;
+	schar *sign;
+	int *index;
+	mutable int next_buffer;
+	Qfloat *buffer[2];
+	double *QD;
+	double **lap;
+};
+
 //
 // construct and solve various formulations
 //
@@ -1597,6 +1675,48 @@ static void solve_epsilon_svr(
 	delete[] y;
 }
 
+static void solve_laplacian_embedded_svr(
+	const svm_problem *prob, const svm_parameter *param,
+	double *alpha, Solver::SolutionInfo* si)
+{
+	int l = prob->l;
+	double *alpha2 = new double[2*l];
+	double *linear_term = new double[2*l];
+	schar *y = new schar[2*l];
+	int i;
+	double **lap = Malloc(double *, l);
+	for (i=0;i<l;i++) lap[i] = Malloc(double, l);
+	svm_problem probv = *prob;
+	laplacian(*param, probv, lap);
+
+	for(i=0;i<l;i++)
+	{
+		alpha2[i] = 0;
+		linear_term[i] = param->p - probv.y[i];
+		y[i] = 1;
+
+		alpha2[i+l] = 0;
+		linear_term[i+l] = param->p + probv.y[i];
+		y[i+l] = -1;
+	}
+
+	Solver s;
+	s.Solve(2*l, LAPESVR_Q(probv,*param, lap), linear_term, y,
+		alpha2, param->C, param->C, param->eps, si, param->shrinking);
+
+	double sum_alpha = 0;
+	for(i=0;i<l;i++)
+	{
+		alpha[i] = alpha2[i] - alpha2[i+l];
+		sum_alpha += fabs(alpha[i]);
+	}
+	info("nu = %f\n",sum_alpha/(param->C*l));
+
+	delete[] alpha2;
+	delete[] linear_term;
+	delete[] y;
+}
+
 static void solve_nu_svr(
 	const svm_problem *prob, const svm_parameter *param,
 	double *alpha, Solver::SolutionInfo* si)
@@ -1663,6 +1783,9 @@ static decision_function svm_train_one(
 			break;
 		case EPSILON_SVR:
 			solve_epsilon_svr(prob,param,alpha,&si);
+			break;
+        case LAPESVR:
+		    solve_laplacian_embedded_svr(prob,param,alpha,&si);
 			break;
 		case NU_SVR:
 			solve_nu_svr(prob,param,alpha,&si);
@@ -2097,7 +2220,8 @@ svm_model *svm_train(const svm_problem *prob, const svm_parameter *param)
 
 	if(param->svm_type == ONE_CLASS ||
 	   param->svm_type == EPSILON_SVR ||
-	   param->svm_type == NU_SVR)
+	   param->svm_type == NU_SVR ||
+	   param->svm_type == LAPESVR)
 	{
 		// regression or one-class-svm
 		model->nr_class = 2;
@@ -2108,7 +2232,8 @@ svm_model *svm_train(const svm_problem *prob, const svm_parameter *param)
 
 		if(param->probability &&
 		   (param->svm_type == EPSILON_SVR ||
-		    param->svm_type == NU_SVR))
+		    param->svm_type == NU_SVR ||
+			param->svm_type == LAPESVR))
 		{
 			model->probA = Malloc(double,1);
 			model->probA[0] = svm_svr_probability(prob,param);
@@ -2488,7 +2613,9 @@ int svm_get_nr_sv(const svm_model *model)
 
 double svm_get_svr_probability(const svm_model *model)
 {
-	if ((model->param.svm_type == EPSILON_SVR || model->param.svm_type == NU_SVR) &&
+	if ((model->param.svm_type == EPSILON_SVR || 
+		model->param.svm_type == NU_SVR || 
+		model->param.svm_type == LAPESVR) &&
 	    model->probA!=NULL)
 		return model->probA[0];
 	else
@@ -2503,7 +2630,8 @@ double svm_predict_values(const svm_model *model, const svm_node *x, double* dec
 	int i;
 	if(model->param.svm_type == ONE_CLASS ||
 	   model->param.svm_type == EPSILON_SVR ||
-	   model->param.svm_type == NU_SVR)
+	   model->param.svm_type == NU_SVR ||
+	   model->param.svm_type == LAPESVR)
 	{
 		double *sv_coef = model->sv_coef[0];
 		double sum = 0;
@@ -2580,7 +2708,8 @@ double svm_predict(const svm_model *model, const svm_node *x)
 	double *dec_values;
 	if(model->param.svm_type == ONE_CLASS ||
 	   model->param.svm_type == EPSILON_SVR ||
-	   model->param.svm_type == NU_SVR)
+	   model->param.svm_type == NU_SVR ||
+	   model->param.svm_type == LAPESVR)
 		dec_values = Malloc(double, 1);
 	else
 		dec_values = Malloc(double, nr_class*(nr_class-1)/2);
@@ -3052,7 +3181,8 @@ const char *svm_check_parameter(const svm_problem *prob, const svm_parameter *pa
 	   svm_type != NU_SVC &&
 	   svm_type != ONE_CLASS &&
 	   svm_type != EPSILON_SVR &&
-	   svm_type != NU_SVR)
+	   svm_type != NU_SVR &&
+	   svm_type != LAPESVR)
 		return "unknown svm type";
 
 	// kernel_type, degree
@@ -3082,7 +3212,8 @@ const char *svm_check_parameter(const svm_problem *prob, const svm_parameter *pa
 
 	if(svm_type == C_SVC ||
 	   svm_type == EPSILON_SVR ||
-	   svm_type == NU_SVR)
+	   svm_type == NU_SVR ||
+	   svm_type == LAPESVR)
 		if(param->C <= 0)
 			return "C <= 0";
 
@@ -3092,7 +3223,7 @@ const char *svm_check_parameter(const svm_problem *prob, const svm_parameter *pa
 		if(param->nu <= 0 || param->nu > 1)
 			return "nu <= 0 or nu > 1";
 
-	if(svm_type == EPSILON_SVR)
+	if(svm_type == EPSILON_SVR || svm_type == LAPESVR)
 		if(param->p < 0)
 			return "p < 0";
 
@@ -3169,7 +3300,7 @@ int svm_check_probability_model(const svm_model *model)
 {
 	return ((model->param.svm_type == C_SVC || model->param.svm_type == NU_SVC) &&
 		model->probA!=NULL && model->probB!=NULL) ||
-		((model->param.svm_type == EPSILON_SVR || model->param.svm_type == NU_SVR) &&
+		((model->param.svm_type == EPSILON_SVR || model->param.svm_type == NU_SVR || model->param.svm_type == LAPESVR) &&
 		 model->probA!=NULL);
 }
 
