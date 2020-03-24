@@ -70,7 +70,7 @@ double kthLargest(dlib::matrix<double> &arr, int l, int r, int k) {
 	return INT_MAX; 
 } 
 
-void laplacian(const svm_parameter &param, svm_problem &prob, double **lap) {
+void laplacian(const svm_parameter &param, svm_problem &prob, double **PHI_tilde) {
     double gamma = param.lap_gamma;
     int n_neighbors = param.n_neighbors;
     int nu = param.nu_eigen;
@@ -125,7 +125,7 @@ void laplacian(const svm_parameter &param, svm_problem &prob, double **lap) {
     dlib::matrix<double> SIGMA_S = eig_S.get_real_eigenvalues();
     dlib::matrix<double> V = eig_S.get_pseudo_v();
 
-    dlib::matrix<double> PHI_tilde = PHI * V * dlib::diagm(dlib::reciprocal(dlib::sqrt(SIGMA_S)));
+    dlib::matrix<double> PHI_til = PHI * V * dlib::diagm(dlib::reciprocal(dlib::sqrt(SIGMA_S)));
 
     dlib::matrix<double> y(prob.l, 1);
     for (int i = 0; i < prob.l; i++) {
@@ -136,16 +136,15 @@ void laplacian(const svm_parameter &param, svm_problem &prob, double **lap) {
         }
     }
 
-    dlib::matrix<double> lapla = PHI_tilde * dlib::trans(PHI_tilde);
-    dlib::matrix<double> y_virtual = lapla * dlib::diagm(LAMBDA) * y;
+    dlib::matrix<double> y_virtual = PHI_til * dlib::trans(PHI_til) * dlib::diagm(LAMBDA) * y;
 
 	for (int i = 0; i < prob.l; i++) {
 		prob.y[i] = y_virtual(i);
 	}
 
     for (int i = 0; i < prob.l; i++) {
-        for (int j = 0; j < prob.l; j++) {
-            lap[i][j] = lapla(i, j);
+        for (int j = 0; j < param.nu_eigen; j++) {
+            PHI_tilde[i][j] = PHI_til(i, j);
         }
     }
 }
