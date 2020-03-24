@@ -217,6 +217,7 @@ public:
 protected:
 
 	double (Kernel::*kernel_function)(int i, int j) const;
+	static double dot(double *px, double *py, int length);
 
 private:
 	const svm_node **x;
@@ -311,6 +312,13 @@ double Kernel::dot(const svm_node *px, const svm_node *py)
 				++px;
 		}
 	}
+	return sum;
+}
+
+double Kernel::dot(double *px, double *py, int length)
+{
+	double sum = 0;
+	for (int i = 0; i < length; i++) sum += px[i] * py[i];
 	return sum;
 }
 
@@ -1438,10 +1446,11 @@ private:
 class LAPESVR_Q: public Kernel
 {
 public:
-	LAPESVR_Q(const svm_problem& prob, const svm_parameter& param, double **_lap)
+	LAPESVR_Q(const svm_problem& prob, const svm_parameter& param, double **_PHI_tilde)
 	:Kernel(prob.l, prob.x, param)
 	{
-		lap = _lap;
+		PHI_tilde = _PHI_tilde;
+		nu_eigen = param.nu_eigen;
 		l = prob.l;
 		cache = new Cache(l,(long int)(param.cache_size*(1<<20)));
 		QD = new double[2*l];
@@ -1453,13 +1462,17 @@ public:
 			sign[k+l] = -1;
 			index[k] = k;
 			index[k+l] = k;
-			QD[k] = (this->*kernel_function)(k,k) + lap[k][k];
+			QD[k] = (this->*kernel_function)(k,k) + this->kernel_linear(k, k);
 			QD[k+l] = QD[k];
 		}
 		buffer[0] = new Qfloat[2*l];
 		buffer[1] = new Qfloat[2*l];
 		next_buffer = 0;
 	}
+
+	double kernel_linear(int i, int j) const {
+		return dot(PHI_tilde[i], PHI_tilde[j], nu_eigen);
+    }
 
 	void swap_index(int i, int j) const
 	{
@@ -1475,7 +1488,7 @@ public:
 		if(cache->get_data(real_i,&data,l) < l)
 		{
 			for(j=0;j<l;j++)
-				data[j] = (Qfloat)(this->*kernel_function)(real_i,j) + lap[real_i][j];
+				data[j] = (Qfloat)((this->*kernel_function)(real_i,j) + this->kernel_linear(real_i, j));
 		}
 
 		// reorder and copy
@@ -1509,7 +1522,8 @@ private:
 	mutable int next_buffer;
 	Qfloat *buffer[2];
 	double *QD;
-	double **lap;
+	double **PHI_tilde;
+	int nu_eigen;
 };
 
 //
@@ -1684,10 +1698,10 @@ static void solve_laplacian_embedded_svr(
 	double *linear_term = new double[2*l];
 	schar *y = new schar[2*l];
 	int i;
-	double **lap = Malloc(double *, l);
-	for (i=0;i<l;i++) lap[i] = Malloc(double, l);
+	double **PHI_tilde = Malloc(double *, l);
+	for (i=0;i<l;i++) PHI_tilde[i] = Malloc(double, param->nu_eigen);
 	svm_problem probv = *prob;
-	laplacian(*param, probv, lap);
+	laplacian(*param, probv, PHI_tilde);
 
 	for(i=0;i<l;i++)
 	{
@@ -1701,7 +1715,7 @@ static void solve_laplacian_embedded_svr(
 	}
 
 	Solver s;
-	s.Solve(2*l, LAPESVR_Q(probv,*param, lap), linear_term, y,
+	s.Solve(2*l, LAPESVR_Q(probv,*param, PHI_tilde), linear_term, y,
 		alpha2, param->C, param->C, param->eps, si, param->shrinking);
 
 	double sum_alpha = 0;
