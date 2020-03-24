@@ -1,7 +1,7 @@
 # Semi-Supervised Support Vector Regression (SVR)
 
 ## Laplacian Embedded Support Vector Regression (Chen et al., 2012)
-The picture below shows the decision surface on Two-Moons data set created by LapESVR when the unlabelled is minimally utilized, $\mu = 1$.  
+The picture below shows the decision surface on Two-Moons data set created by LapESVR when the unlabelled is minimally utilized, $\mu = 1$. Note that only the data points near the center are labelled.  
 ![mu 1](mu-1.png)
 
 When $\mu = 1000$, the model learns the structure of the two moons through the unlabelled data.  
